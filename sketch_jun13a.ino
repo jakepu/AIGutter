@@ -1,5 +1,5 @@
 #include <Wire.h>
-
+#include <ArduinoBLE.h>
 #include <MPU6050_tockn.h>
 const uint8_t LED_PIN_0 = 2;
 const uint8_t LED_PIN_1 = 3;
@@ -11,20 +11,48 @@ const uint8_t H_BRIDGE_2A = 9;    // left motor black
 const uint8_t H_BRIDGE_3A = 10;   // right motor black
 const uint8_t H_BRIDGE_4A = 11;   // right motor red
 const uint8_t H_BRIDGE_12EN = 12; // left motor enable
-const uint8_t H_BRIDGE_34EN = 13; // right motor enable
+const uint8_t H_BRIDGE_34EN = 14; // right motor enable
 const int GYRO_THRESHHOLD = 10;   //in degree
+char message = "3";
+BLEService gutterService("2e3ce4dd-7100-42ba-af41-39744c08ad15");
+BLECharacteristic gutterModeChar("2A3D", (BLERead | BLENotify), "3"); 
 MPU6050 mpu6050(Wire);
 enum state{waiting, flat, ascent, clean, clean_r, ascent_r, flat_r};
 enum state state_cur;
+enum state state_prev = flat;
 float gyro_data[3];
 int sw_state;
-
+bool stop_flag = 0;
+bool next_flag = 0;
 void update_state_led(enum state show_state){
   digitalWrite(LED_PIN_0, (show_state & 0b1));
   digitalWrite(LED_PIN_1, ((show_state >> 1) & 0b1));
   digitalWrite(LED_PIN_2, ((show_state >> 2) & 0b1));
 }
-
+void checkButtonAction(){
+  switch (message)
+  {
+  case 0:  //stop
+    state_prev = state_cur;
+    state_cur = waiting;
+    stop_flag = 1;
+    break;
+  case 1: //continue
+    if (stop_flag == 1){
+      state_cur = state_prev;
+    }
+    else {
+      next_flag == 1;
+    }
+    stop_flag = 0;
+    break;
+  case 2: //reverse
+    state_cur = flat_r;
+    break;
+  default:
+    break;
+  }
+}
 void setup() {
   Serial.begin(9600);
   Wire.begin();
@@ -42,6 +70,19 @@ void setup() {
   pinMode(LED_PIN_CLEAN,OUTPUT);
   pinMode(LED_PIN_SW,INPUT);
   state_cur = waiting;
+  //BLE initialization
+  pinMode(LED_BUILTIN, OUTPUT);
+  if (!BLE.begin()) {
+  Serial.println("starting BLE failed!");
+  while (1);
+  }
+  BLE.setLocalName("AIGutter");
+  BLE.setAdvertisedService(gutterService);
+  batteryService.addCharacteristic(gutterModeChar);
+  BLE.addService(gutterService);
+  BLE.advertise();
+  Serial.println("Bluetooth device active, waiting for connections...");
+  
 }
 
 void loop() {
@@ -50,15 +91,32 @@ void loop() {
   gyro_data[1] = mpu6050.getAngleY();
   gyro_data[2] = mpu6050.getAngleZ();
   update_state_led(state_cur);
+  //make sure central device is connected
+  if (central) {
+    Serial.print("Connected to central: ");
+    Serial.println(central.address());
+    digitalWrite(LED_BUILTIN, HIGH);
+
+    while (central.connected()) {
+      if (gutterModeChar.written()) {
+        message = gutterModeChar.value();
+        
+      } else {
+        message = 3;
+      }
+    }
+  }
+  checkButtonAction();
   switch (state_cur)
   {
     case waiting:
       digitalWrite(H_BRIDGE_12EN, LOW);
       digitalWrite(H_BRIDGE_34EN, LOW);
-      sw_state = digitalRead(LED_PIN_SW);
-      if (sw_state == LOW){
+      //sw_state = digitalRead(LED_PIN_SW);
+      if (next_flag == 1){
         //switch button is pressed
         state_cur = flat;
+        next_flag = 0;
       }
       break;
     case flat:
@@ -79,10 +137,11 @@ void loop() {
       break;
     case clean:
       digitalWrite(LED_PIN_CLEAN, HIGH);
-      sw_state = digitalRead(LED_PIN_SW);
-      if (sw_state == LOW){
+      //sw_state = digitalRead(LED_PIN_SW);
+      if (next_flag == 1){
         //switch button is pressed
         state_cur = clean_r;
+        next_flag = 0;
       }
       break;
     case clean_r:
@@ -101,11 +160,12 @@ void loop() {
       }
       break;
     case flat_r:
-      sw_state = digitalRead(LED_PIN_SW);
-      if (sw_state == LOW){
+      //sw_state = digitalRead(LED_PIN_SW);
+      if (next_flag == 1){
         //switch button is pressed
         state_cur = waiting;
-        delay(300);
+        next_flag = 0;
+        //delay(300);
       }
       break;
     default:
@@ -113,8 +173,8 @@ void loop() {
   }
   Serial.print("angleX : ");
   Serial.print(gyro_data[0]);
-  Serial.print("\tangleY : ");
+  Serial.print("angleY : ");
   Serial.print(gyro_data[1]);
-  Serial.print("\tangleZ : ");
+  Serial.print("angleZ : ");
   Serial.println(gyro_data[2]);
 }
