@@ -13,9 +13,9 @@ const uint8_t H_BRIDGE_4A = 11;   // right motor red
 const uint8_t H_BRIDGE_12EN = 12; // left motor enable
 const uint8_t H_BRIDGE_34EN = 14; // right motor enable
 const int GYRO_THRESHHOLD = 10;   //in degree
-char message = "3";
+char message = 3;
 BLEService gutterService("2e3ce4dd-7100-42ba-af41-39744c08ad15");
-BLECharacteristic gutterModeChar("2A3D", (BLERead | BLENotify), "3"); 
+BLECharCharacteristic gutterModeChar("166d7175-3dcf-4967-9f9e-bba83a82ec6e", (BLERead | BLENotify | BLEWrite)); 
 MPU6050 mpu6050(Wire);
 enum state{waiting, flat, ascent, clean, clean_r, ascent_r, flat_r};
 enum state state_cur;
@@ -78,7 +78,7 @@ void setup() {
   }
   BLE.setLocalName("AIGutter");
   BLE.setAdvertisedService(gutterService);
-  batteryService.addCharacteristic(gutterModeChar);
+  gutterService.addCharacteristic(gutterModeChar);
   BLE.addService(gutterService);
   BLE.advertise();
   Serial.println("Bluetooth device active, waiting for connections...");
@@ -92,6 +92,7 @@ void loop() {
   gyro_data[2] = mpu6050.getAngleZ();
   update_state_led(state_cur);
   //make sure central device is connected
+  BLEDevice central = BLE.central();
   if (central) {
     Serial.print("Connected to central: ");
     Serial.println(central.address());
