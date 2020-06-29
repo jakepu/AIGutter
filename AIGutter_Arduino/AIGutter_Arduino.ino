@@ -84,6 +84,7 @@ void setup() {
 
 void loop() {
   //make sure central device is connected
+  digitalWrite(LED_BUILTIN, LOW);
   BLE.advertise();
   Serial.println("Bluetooth device active, waiting for connections...");
   BLEDevice central = BLE.central();
