@@ -21,7 +21,6 @@ enum state{waiting, flat, ascent, clean, clean_r, ascent_r, flat_r};
 enum state state_cur;
 enum state state_prev = flat;
 float gyro_data[3];
-int sw_state;
 bool stop_flag = 0;
 bool next_flag = 0;
 void update_state_led(enum state show_state){
@@ -80,18 +79,13 @@ void setup() {
   BLE.setAdvertisedService(gutterService);
   gutterService.addCharacteristic(gutterModeChar);
   BLE.addService(gutterService);
-  BLE.advertise();
-  Serial.println("Bluetooth device active, waiting for connections...");
   
 }
 
 void loop() {
-  mpu6050.update();
-  gyro_data[0] = mpu6050.getAngleX();
-  gyro_data[1] = mpu6050.getAngleY();
-  gyro_data[2] = mpu6050.getAngleZ();
-  update_state_led(state_cur);
   //make sure central device is connected
+  BLE.advertise();
+  Serial.println("Bluetooth device active, waiting for connections...");
   BLEDevice central = BLE.central();
   if (central) {
     Serial.print("Connected to central: ");
@@ -105,77 +99,77 @@ void loop() {
       } else {
         message = 3;
       }
+      checkButtonAction();
+      mpu6050.update();
+      gyro_data[0] = mpu6050.getAngleX();
+      gyro_data[1] = mpu6050.getAngleY();
+      gyro_data[2] = mpu6050.getAngleZ();
+      update_state_led(state_cur);
+      switch (state_cur)
+      {
+        case waiting:
+          digitalWrite(H_BRIDGE_12EN, LOW);
+          digitalWrite(H_BRIDGE_34EN, LOW);
+          if (next_flag == 1){
+            state_cur = flat;
+            next_flag = 0;
+          }
+          break;
+        case flat:
+          digitalWrite(H_BRIDGE_1A, HIGH);
+          digitalWrite(H_BRIDGE_2A, LOW);
+          digitalWrite(H_BRIDGE_3A, LOW);
+          digitalWrite(H_BRIDGE_4A, HIGH);
+          digitalWrite(H_BRIDGE_12EN, HIGH);
+          digitalWrite(H_BRIDGE_34EN, HIGH);
+          if (gyro_data[0] > GYRO_THRESHHOLD) {
+            state_cur = ascent;
+          }
+          break;
+        case ascent:
+          if (gyro_data[0] < -GYRO_THRESHHOLD) {
+            state_cur = clean;
+          }
+          break;
+        case clean:
+          digitalWrite(LED_PIN_CLEAN, HIGH);
+          if (next_flag == 1){
+            state_cur = clean_r;
+            next_flag = 0;
+          }
+          break;
+        case clean_r:
+          digitalWrite(H_BRIDGE_1A, LOW);
+          digitalWrite(H_BRIDGE_2A, HIGH);
+          digitalWrite(H_BRIDGE_3A, HIGH);
+          digitalWrite(H_BRIDGE_4A, LOW);
+          if (gyro_data[0] < -GYRO_THRESHHOLD) {
+            state_cur = ascent_r;
+          }
+          break;
+        case ascent_r:
+          digitalWrite(LED_PIN_CLEAN, LOW);
+          if ((gyro_data[0] < GYRO_THRESHHOLD) && (gyro_data[0] > -GYRO_THRESHHOLD)) {
+            state_cur = flat_r;
+          }
+          break;
+        case flat_r:
+          if (next_flag == 1){
+            state_cur = waiting;
+            next_flag = 0;
+          }
+          break;
+        default:
+          break;
+      }
+      Serial.print("angleX : ");
+      Serial.print(gyro_data[0]);
+      Serial.print("angleY : ");
+      Serial.print(gyro_data[1]);
+      Serial.print("angleZ : ");
+      Serial.println(gyro_data[2]);
+      delay(500);
     }
   }
-  checkButtonAction();
-  switch (state_cur)
-  {
-    case waiting:
-      digitalWrite(H_BRIDGE_12EN, LOW);
-      digitalWrite(H_BRIDGE_34EN, LOW);
-      //sw_state = digitalRead(LED_PIN_SW);
-      if (next_flag == 1){
-        //switch button is pressed
-        state_cur = flat;
-        next_flag = 0;
-      }
-      break;
-    case flat:
-      digitalWrite(H_BRIDGE_1A, HIGH);
-      digitalWrite(H_BRIDGE_2A, LOW);
-      digitalWrite(H_BRIDGE_3A, LOW);
-      digitalWrite(H_BRIDGE_4A, HIGH);
-      digitalWrite(H_BRIDGE_12EN, HIGH);
-      digitalWrite(H_BRIDGE_34EN, HIGH);
-      if (gyro_data[0] > GYRO_THRESHHOLD) {
-        state_cur = ascent;
-      }
-      break;
-    case ascent:
-      if (gyro_data[0] < -GYRO_THRESHHOLD) {
-        state_cur = clean;
-      }
-      break;
-    case clean:
-      digitalWrite(LED_PIN_CLEAN, HIGH);
-      //sw_state = digitalRead(LED_PIN_SW);
-      if (next_flag == 1){
-        //switch button is pressed
-        state_cur = clean_r;
-        next_flag = 0;
-      }
-      break;
-    case clean_r:
-      digitalWrite(H_BRIDGE_1A, LOW);
-      digitalWrite(H_BRIDGE_2A, HIGH);
-      digitalWrite(H_BRIDGE_3A, HIGH);
-      digitalWrite(H_BRIDGE_4A, LOW);
-      if (gyro_data[0] < -GYRO_THRESHHOLD) {
-        state_cur = ascent_r;
-      }
-      break;
-    case ascent_r:
-      digitalWrite(LED_PIN_CLEAN, LOW);
-      if ((gyro_data[0] < GYRO_THRESHHOLD) && (gyro_data[0] > -GYRO_THRESHHOLD)) {
-        state_cur = flat_r;
-      }
-      break;
-    case flat_r:
-      //sw_state = digitalRead(LED_PIN_SW);
-      if (next_flag == 1){
-        //switch button is pressed
-        state_cur = waiting;
-        next_flag = 0;
-        //delay(300);
-      }
-      break;
-    default:
-      break;
-  }
-  Serial.print("angleX : ");
-  Serial.print(gyro_data[0]);
-  Serial.print("angleY : ");
-  Serial.print(gyro_data[1]);
-  Serial.print("angleZ : ");
-  Serial.println(gyro_data[2]);
+  delay(500);
 }
