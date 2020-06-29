@@ -13,7 +13,7 @@ const uint8_t H_BRIDGE_4A = 11;   // right motor red
 const uint8_t H_BRIDGE_12EN = 12; // left motor enable
 const uint8_t H_BRIDGE_34EN = 14; // right motor enable
 const int GYRO_THRESHHOLD = 10;   //in degree
-char message = 3;
+int message = 3;
 BLEService gutterService("2e3ce4dd-7100-42ba-af41-39744c08ad15");
 BLECharCharacteristic gutterModeChar("166d7175-3dcf-4967-9f9e-bba83a82ec6e", (BLERead | BLENotify | BLEWrite)); 
 MPU6050 mpu6050(Wire);
@@ -41,7 +41,7 @@ void checkButtonAction(){
       state_cur = state_prev;
     }
     else {
-      next_flag == 1;
+      next_flag = 1;
     }
     stop_flag = 0;
     break;
@@ -91,14 +91,14 @@ void loop() {
     Serial.print("Connected to central: ");
     Serial.println(central.address());
     digitalWrite(LED_BUILTIN, HIGH);
-
     while (central.connected()) {
       if (gutterModeChar.written()) {
         message = gutterModeChar.value();
-        
+        //Serial.println(message);
       } else {
         message = 3;
       }
+      //Serial.println(message);
       checkButtonAction();
       mpu6050.update();
       gyro_data[0] = mpu6050.getAngleX();
@@ -162,12 +162,15 @@ void loop() {
         default:
           break;
       }
+      Serial.println("Bluetooth connected");
+      /*
       Serial.print("angleX : ");
       Serial.print(gyro_data[0]);
       Serial.print("angleY : ");
       Serial.print(gyro_data[1]);
       Serial.print("angleZ : ");
       Serial.println(gyro_data[2]);
+      */
       delay(500);
     }
   }
