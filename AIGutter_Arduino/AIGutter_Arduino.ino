@@ -13,13 +13,15 @@ const uint8_t H_BRIDGE_4A = 11;   // right motor red
 const uint8_t H_BRIDGE_12EN = 12; // left motor enable
 const uint8_t H_BRIDGE_34EN = 14; // right motor enable
 const int GYRO_THRESHHOLD = 10;   //in degree
-const int LINE_TRACKER_LEFT_PIN = A6;
-const int LINE_TRACKER_RIGHT_PIN = A7;
-int BGLevel = 900;
-int detectLevel = 950;
+const int LINE_TRACKER_LEFT_PIN = A7;
+const int LINE_TRACKER_RIGHT_PIN = A6;
+int BGLevel_left = 640;
+int BGLevel_right = 800;
+int detectLevel_right = 960;
+int detectLevel_left = 910;
 int message = 3;
 BLEService gutterService("2e3ce4dd-7100-42ba-af41-39744c08ad15");
-BLECharCharacteristic gutterModeChar("166d7175-3dcf-4967-9f9e-bba83a82ec6e", (BLERead | BLENotify | BLEWrite)); 
+BLECharCharacteristic gutterModeChar("166d7175-3dcf-4967-9f9e-bba83a82ec6e", (BLERead | BLENotify | BLEWrite));
 MPU6050 mpu6050(Wire);
 enum state{waiting, flat, ascent, clean, clean_r, ascent_r, flat_r};
 enum state state_cur;
@@ -35,6 +37,16 @@ void update_state_led(enum state show_state){
   digitalWrite(LED_PIN_2, ((show_state >> 2) & 0b1));
 }
 bool is_online(int tracker_pin){
+  int BGLevel;
+  int detectLevel;
+  if (tracker_pin == LINE_TRACKER_LEFT_PIN){
+    BGLevel = BGLevel_left;
+    detectLevel = detectLevel_left;
+  }
+  else{
+    BGLevel = BGLevel_right;
+    detectLevel = detectLevel_right;
+  }
   int level = analogRead(tracker_pin);
     // Are we looking for something that is darker than our normal level (say,
   //  a table edge, or a black stripe on a white surface) or something that
@@ -67,11 +79,15 @@ void update_motor_state(uint8_t mode){
     motor_state_cur = full_stop;
     break;
   case 1: // forward
-    if (is_online(LINE_TRACKER_LEFT_PIN)){
-      motor_state_cur = forward_right;
-    }
-    else if (is_online(LINE_TRACKER_RIGHT_PIN)){
+    Serial.print("left:");
+    Serial.print(analogRead(LINE_TRACKER_LEFT_PIN));
+    Serial.print(" right:");
+    Serial.println(analogRead(LINE_TRACKER_RIGHT_PIN));
+    if (is_online(LINE_TRACKER_LEFT_PIN) && !is_online(LINE_TRACKER_RIGHT_PIN)){
       motor_state_cur = forward_left;
+    }
+    else if (!is_online(LINE_TRACKER_LEFT_PIN) && is_online(LINE_TRACKER_RIGHT_PIN)){
+      motor_state_cur = forward_right;
     }
     else {
       motor_state_cur = forward;
@@ -107,17 +123,17 @@ void update_motor_state(uint8_t mode){
     digitalWrite(H_BRIDGE_3A, LOW);
     digitalWrite(H_BRIDGE_4A, HIGH);
     break;
-  case forward_right:
+  case forward_left:
     digitalWrite(H_BRIDGE_12EN, HIGH);
     digitalWrite(H_BRIDGE_34EN, LOW);
-    digitalWrite(H_BRIDGE_1A, LOW);
-    digitalWrite(H_BRIDGE_2A, HIGH);
+    digitalWrite(H_BRIDGE_1A, HIGH);
+    digitalWrite(H_BRIDGE_2A, LOW);
     break;
-  case forward_left:
+  case forward_right:
     digitalWrite(H_BRIDGE_12EN, LOW);
     digitalWrite(H_BRIDGE_34EN, HIGH);
-    digitalWrite(H_BRIDGE_3A, HIGH);
-    digitalWrite(H_BRIDGE_4A, LOW);
+    digitalWrite(H_BRIDGE_3A, LOW);
+    digitalWrite(H_BRIDGE_4A, HIGH);
     break;
   case reverse:
     digitalWrite(H_BRIDGE_12EN, HIGH);
@@ -127,13 +143,13 @@ void update_motor_state(uint8_t mode){
     digitalWrite(H_BRIDGE_3A, HIGH);
     digitalWrite(H_BRIDGE_4A, LOW);
     break;
-  case reverse_left:
+  case reverse_right:
     digitalWrite(H_BRIDGE_12EN, LOW);
     digitalWrite(H_BRIDGE_34EN, HIGH);
     digitalWrite(H_BRIDGE_3A, HIGH);
     digitalWrite(H_BRIDGE_4A, LOW);
     break;
-  case reverse_right:
+  case reverse_left:
     digitalWrite(H_BRIDGE_12EN, HIGH);
     digitalWrite(H_BRIDGE_34EN, LOW);
     digitalWrite(H_BRIDGE_1A, LOW);
@@ -275,7 +291,8 @@ void loop() {
         default:
           break;
       }
-      Serial.println("Bluetooth connected");
+      //Serial.println("Bluetooth connected");
+      
       /*
       Serial.print("angleX : ");
       Serial.print(gyro_data[0]);
