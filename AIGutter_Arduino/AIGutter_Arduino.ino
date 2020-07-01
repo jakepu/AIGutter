@@ -16,7 +16,7 @@ const int GYRO_THRESHHOLD = 10;   //in degree
 const int LINE_TRACKER_LEFT_PIN = A6;
 const int LINE_TRACKER_RIGHT_PIN = A7;
 int BGLevel = 900;
-int detectLevel = 959;
+int detectLevel = 950;
 int message = 3;
 BLEService gutterService("2e3ce4dd-7100-42ba-af41-39744c08ad15");
 BLECharCharacteristic gutterModeChar("166d7175-3dcf-4967-9f9e-bba83a82ec6e", (BLERead | BLENotify | BLEWrite)); 
@@ -73,6 +73,9 @@ void update_motor_state(uint8_t mode){
     else if (is_online(LINE_TRACKER_RIGHT_PIN)){
       motor_state_cur = forward_left;
     }
+    else {
+      motor_state_cur = forward;
+    }
     break;
   case 2: // reverse
     if (is_online(LINE_TRACKER_LEFT_PIN)){
@@ -80,6 +83,9 @@ void update_motor_state(uint8_t mode){
     }
     else if (is_online(LINE_TRACKER_RIGHT_PIN)){
       motor_state_cur = reverse_left;
+    }
+    else{
+      motor_state_cur = reverse;
     }
     break;
   default:
