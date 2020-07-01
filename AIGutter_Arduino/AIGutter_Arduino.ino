@@ -13,6 +13,10 @@ const uint8_t H_BRIDGE_4A = 11;   // right motor red
 const uint8_t H_BRIDGE_12EN = 12; // left motor enable
 const uint8_t H_BRIDGE_34EN = 14; // right motor enable
 const int GYRO_THRESHHOLD = 10;   //in degree
+const int LINE_TRACKER_LEFT_PIN = A6;
+const int LINE_TRACKER_RIGHT_PIN = A7;
+int BGLevel = 900;
+int detectLevel = 959;
 int message = 3;
 BLEService gutterService("2e3ce4dd-7100-42ba-af41-39744c08ad15");
 BLECharCharacteristic gutterModeChar("166d7175-3dcf-4967-9f9e-bba83a82ec6e", (BLERead | BLENotify | BLEWrite)); 
@@ -20,6 +24,8 @@ MPU6050 mpu6050(Wire);
 enum state{waiting, flat, ascent, clean, clean_r, ascent_r, flat_r};
 enum state state_cur;
 enum state state_prev = flat;
+enum motor_state{full_stop, forward, forward_right, forward_left, reverse, reverse_left, reverse_right};
+enum motor_state motor_state_cur;
 float gyro_data[3];
 bool stop_flag = 0;
 bool next_flag = 0;
@@ -27,6 +33,111 @@ void update_state_led(enum state show_state){
   digitalWrite(LED_PIN_0, (show_state & 0b1));
   digitalWrite(LED_PIN_1, ((show_state >> 1) & 0b1));
   digitalWrite(LED_PIN_2, ((show_state >> 2) & 0b1));
+}
+bool is_online(int tracker_pin){
+  int level = analogRead(tracker_pin);
+    // Are we looking for something that is darker than our normal level (say,
+  //  a table edge, or a black stripe on a white surface) or something that
+  //  is brighter than our normal level (say, a piece of copper tape? on a
+  //  dark floor)?
+  // Remember, the darker the surface, the higher the value returned.
+  if (BGLevel < detectLevel) // Light-on-dark situation
+  {
+    // For a light-on-dark detection, we're looking to see if the level is
+    //  higher than _BGLevel. Our threshold will be a rise above the BGLevel
+    //  of 1/4 the difference between background and detect levels.
+    int threshold = (detectLevel - BGLevel)>>2;
+    if (level-threshold > BGLevel) return true;
+    else                            return false;
+  }
+  else // Dark-on-light situation
+  {
+    // For a dark-on-light detection, we'll do exactly the opposite: check to
+    //  see if the level is lower than _BGLevel by at least 1/4 the difference
+    //  between the levels.
+    int threshold = (BGLevel - detectLevel)>>2;
+    if (level+threshold < BGLevel) return true;
+    else                            return false;
+  }
+}
+void update_motor_state(uint8_t mode){
+  switch (mode)
+  {
+  case 0: // full stop
+    motor_state_cur = full_stop;
+    break;
+  case 1: // forward
+    if (is_online(LINE_TRACKER_LEFT_PIN)){
+      motor_state_cur = forward_right;
+    }
+    else if (is_online(LINE_TRACKER_RIGHT_PIN)){
+      motor_state_cur = forward_left;
+    }
+    break;
+  case 2: // reverse
+    if (is_online(LINE_TRACKER_LEFT_PIN)){
+      motor_state_cur = reverse_right;
+    }
+    else if (is_online(LINE_TRACKER_RIGHT_PIN)){
+      motor_state_cur = reverse_left;
+    }
+    break;
+  default:
+    motor_state_cur = full_stop;
+    break;
+  }
+
+  switch (motor_state_cur)
+  {
+  case full_stop:
+    digitalWrite(H_BRIDGE_12EN, LOW);
+    digitalWrite(H_BRIDGE_34EN, LOW);
+    break;
+  case forward:
+    digitalWrite(H_BRIDGE_12EN, HIGH);
+    digitalWrite(H_BRIDGE_34EN, HIGH);
+    digitalWrite(H_BRIDGE_1A, HIGH);
+    digitalWrite(H_BRIDGE_2A, LOW);
+    digitalWrite(H_BRIDGE_3A, LOW);
+    digitalWrite(H_BRIDGE_4A, HIGH);
+    break;
+  case forward_right:
+    digitalWrite(H_BRIDGE_12EN, HIGH);
+    digitalWrite(H_BRIDGE_34EN, LOW);
+    digitalWrite(H_BRIDGE_1A, LOW);
+    digitalWrite(H_BRIDGE_2A, HIGH);
+    break;
+  case forward_left:
+    digitalWrite(H_BRIDGE_12EN, LOW);
+    digitalWrite(H_BRIDGE_34EN, HIGH);
+    digitalWrite(H_BRIDGE_3A, HIGH);
+    digitalWrite(H_BRIDGE_4A, LOW);
+    break;
+  case reverse:
+    digitalWrite(H_BRIDGE_12EN, HIGH);
+    digitalWrite(H_BRIDGE_34EN, HIGH);
+    digitalWrite(H_BRIDGE_1A, LOW);
+    digitalWrite(H_BRIDGE_2A, HIGH);
+    digitalWrite(H_BRIDGE_3A, HIGH);
+    digitalWrite(H_BRIDGE_4A, LOW);
+    break;
+  case reverse_left:
+    digitalWrite(H_BRIDGE_12EN, LOW);
+    digitalWrite(H_BRIDGE_34EN, HIGH);
+    digitalWrite(H_BRIDGE_3A, HIGH);
+    digitalWrite(H_BRIDGE_4A, LOW);
+    break;
+  case reverse_right:
+    digitalWrite(H_BRIDGE_12EN, HIGH);
+    digitalWrite(H_BRIDGE_34EN, LOW);
+    digitalWrite(H_BRIDGE_1A, LOW);
+    digitalWrite(H_BRIDGE_2A, HIGH);
+    break;
+  default:
+    digitalWrite(H_BRIDGE_12EN, LOW);
+    digitalWrite(H_BRIDGE_34EN, LOW);
+    break;
+  }
 }
 void checkButtonAction(){
   switch (message)
@@ -109,30 +220,26 @@ void loop() {
       switch (state_cur)
       {
         case waiting:
-          digitalWrite(H_BRIDGE_12EN, LOW);
-          digitalWrite(H_BRIDGE_34EN, LOW);
+          update_motor_state(0);
           if (next_flag == 1){
             state_cur = flat;
             next_flag = 0;
           }
           break;
         case flat:
-          digitalWrite(H_BRIDGE_1A, HIGH);
-          digitalWrite(H_BRIDGE_2A, LOW);
-          digitalWrite(H_BRIDGE_3A, LOW);
-          digitalWrite(H_BRIDGE_4A, HIGH);
-          digitalWrite(H_BRIDGE_12EN, HIGH);
-          digitalWrite(H_BRIDGE_34EN, HIGH);
+          update_motor_state(1);
           if (gyro_data[0] > GYRO_THRESHHOLD) {
             state_cur = ascent;
           }
           break;
         case ascent:
+          update_motor_state(1);
           if (gyro_data[0] < -GYRO_THRESHHOLD) {
             state_cur = clean;
           }
           break;
         case clean:
+          update_motor_state(1);
           digitalWrite(LED_PIN_CLEAN, HIGH);
           if (next_flag == 1){
             state_cur = clean_r;
@@ -140,21 +247,20 @@ void loop() {
           }
           break;
         case clean_r:
-          digitalWrite(H_BRIDGE_1A, LOW);
-          digitalWrite(H_BRIDGE_2A, HIGH);
-          digitalWrite(H_BRIDGE_3A, HIGH);
-          digitalWrite(H_BRIDGE_4A, LOW);
+          update_motor_state(2);
           if (gyro_data[0] < -GYRO_THRESHHOLD) {
             state_cur = ascent_r;
           }
           break;
         case ascent_r:
+          update_motor_state(2);
           digitalWrite(LED_PIN_CLEAN, LOW);
           if ((gyro_data[0] < GYRO_THRESHHOLD) && (gyro_data[0] > -GYRO_THRESHHOLD)) {
             state_cur = flat_r;
           }
           break;
         case flat_r:
+          update_motor_state(2);
           if (next_flag == 1){
             state_cur = waiting;
             next_flag = 0;
@@ -172,8 +278,8 @@ void loop() {
       Serial.print("angleZ : ");
       Serial.println(gyro_data[2]);
       */
-      delay(500);
+      
     }
   }
-  delay(500);
+
 }
